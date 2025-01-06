@@ -1,0 +1,343 @@
+c
+cc    4-6 2005  TAO
+c
+      subroutine fadvuw (x,x1,u,v,w)
+cc    ****   compute anti-diffusive velocities   *******************
+c     parameter (nx=66,ny=10,nz=34,nm=nx)
+#include <parame.incl>
+      parameter (nm=nx+nz)
+      common/mpi_parameter/imax,iles1,iles,il2,jmax,jles1,jles,jl2,
+     1    kmax,kles,kl2
+      common/option/ lipps,ijkadv,istatmin,iwater,itoga,imlifting,lin,
+     1   irf,iadvh,irfg,ismg,id
+      common/option1/ nsml
+      common/bx/ dx,d2x,rd2x,dx2,rdx,rd4x,rdx2,r2dx2,r4dx2
+      common/by/ dy,d2y,rd2y,dy2,rdy,rd4y,rdy2,r2dy2,r4dy2
+      common/bz/ dz,d2z,rd2z,dz2,rdz,rd4z,rdz2,r2dz2,r4dz2
+      common/bt/ dt,d2t,rijl2,dts(16)
+      common/b5/ tb(nz),qb(nz),rho1(nz),rho(nz),ta(nz),qa(nz),ta1(nz),
+     1  qa1(nz),coef(nz),z1(nz),z2(nz),z3(nz),am(nz),am1(nz),ub(nz),
+     2  vb(nz),wb(nz),ub1(nz),vb1(nz),rrho(nz),rrho1(nz),wbx(nx)
+      common/bcor1/ dxr(nx,ny),dxxt(nx,ny,1),dxxt1(nx,ny),dyr(nx,ny),
+     1   dyyt(nx,ny,1),dyyt1(nx,ny),dzr(nz),dzzt(nz),dzzt1(nz)
+      dimension x(nx,ny,nz),x1(nx,ny,nz)
+      dimension u(nx,ny,nz),v(nx,ny,nz),w(nx,ny,nz)
+cc    local variables
+      real umod(nx,ny,nz),vmod(nx,ny,nz),wmod(nx,ny,nz)
+      real xy1(nx,ny),xy2(nx,ny),xy3(nx,ny),xy4(nx,ny),xy5(nx,ny),
+     1  y1(nm),y2(nm),y3(nm),y4(nm),y5(nm),y6(nm),y7(nm),y8(nm),y9(nm),
+     1	y10(nm),y11(nm),y12(nm),y13(nm),y14(nm),y15(nm),y16(nm)
+
+      save
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+       eps=1.e-10
+
+c$doacross local(k,j,i)
+       do k=1,kmax
+#ifdef VERSION2D
+	  do j=1,1
+#else
+	  do j=1,jmax
+#endif
+	     do i=1,imax
+		 umod(i,j,k)=0.
+		 vmod(i,j,k)=0.
+		 wmod(i,j,k)=0.
+	     enddo
+	  enddo
+       enddo
+
+c   ***   u-component wind   *******************************************
+      do 1000 k=2,kles
+         kp=k+1
+         km=k-1
+#ifdef VERSION2D
+      do 1000 j=1,1
+        jp=j
+        jm=j
+#else
+      do 1000 j=3,jles
+        jp=j+1
+        jm=j-1
+#endif
+       do 100 i=3,iles
+        ip=i+1
+        im=i-1
+c        imm=i-2
+        y5(i)=x(i,j,k)+x(im,j,k)
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+       if (y5(i) .ge. eps) then
+        y4(i)=x(i,j,kp)+x(im,j,kp)
+
+        umod(i,j,k)=(abs(u(i,j,k))-u(i,j,k)*u(i,j,k)*dxxt(i,j,1))
+     1               *(x(i,j,k)-x(im,j,k))/(x(im,j,k)+x(i,j,k)+eps)
+        endif
+  100 continue
+ 1000 continue
+c   ***   v-component wind   *******************************************
+      do 2000 k=2,kles
+         kp=k+1
+         km=k-1
+#ifdef VERSION2D
+      do 2000 j=1,1
+         jp=j
+         jm=j
+#else
+      do 2000 j=3,jles
+         jp=j+1
+         jm=j-1
+#endif
+       do 200 i=3,iles
+        ip=i+1
+        im=i-1
+        y5(i)=x(i,j,k)+x(i,jm,k)
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+        if (y5(i) .ge. eps) then
+        y4(i)=x(i,j,kp)+x(i,jm,kp)
+        vmod(i,j,k)=(abs(v(i,j,k))-v(i,j,k)*v(i,j,k)*dyyt(i,j,1))
+     1               *(x(i,j,k)-x(i,jm,k))/(x(i,jm,k)+x(i,j,k)+eps)
+        endif
+  200 continue
+ 2000 continue
+c   ***   w-component wind   *******************************************
+      do 3000 k=3,kles
+         kp=k+1
+         km=k-1
+#ifdef VERSION2D
+      do 3000 j=1,1
+        jp=j
+        jm=j
+#else
+      do 3000 j=3,jles
+        jp=j+1
+        jm=j-1
+#endif
+       do 300 i=3,iles
+        ip=i+1
+        im=i-1
+        y5(i)=x(i,j,k)+x(i,j,km)
+c
+       if (y5(i) .ge. eps) then
+        y4(i)=x(ip,j,k)+x(ip,j,km)
+         wmod(i,j,k)=(abs(w(i,j,k))-w(i,j,k)*w(i,j,k)*dzzt(k))
+     1                *(x(i,j,k)-x(i,j,km))/(x(i,j,k)+x(i,j,km)+eps)
+       endif
+  300 continue
+ 3000 continue
+c   *****************************************************************
+         call bndop (umod)
+         call bndop (vmod)
+         call bndop (wmod)
+#ifdef LB_OPEN_BC
+         CALL BNDOP11 (UMOD,1)
+         CALL BNDOP11 (VMOD,1)
+         CALL BNDOP11 (WMOD,2)
+#endif
+
+ccccc   non-oscillatory option (smolarkiewicz and grabowski, 1990)
+      do 9000 k=1,kmax
+#ifdef VERSION2D
+      do 9000 j=1,1
+#else
+      do 9000 j=1,jmax
+#endif
+      do 9000 i=1,imax
+         u(i,j,k)=0.
+         v(i,j,k)=0.
+         w(i,j,k)=0.
+ 9000 continue
+      do 4000 k=2,kles
+         kp=k+1
+         km=k-1
+         dttk=dzzt1(k)
+#ifdef VERSION2D
+       do 4000 j=1,1
+         jp=j
+         jm=j
+#else
+       do 4000 j=3,jles
+         jp=j+1
+         jm=j-1
+#endif
+       do 400 i=2,iles
+         im=i-1
+         ip=i+1
+         y1(i)=0.
+         y2(i)=0.
+         y3(i)=0.
+         y4(i)=0.
+         y5(i)=x(i,j,k)+x(im,j,k)
+        if (y5(i) .ge. eps) then
+         y1(i)=max(x(im,j,k),x(i,j,k),x(ip,j,k),x1(im,j,k),
+     1             x1(i,j,k),x1(ip,j,k))
+         y2(i)=min(x(im,j,k),x(i,j,k),x(ip,j,k),x1(im,j,k),
+     1             x1(i,j,k),x1(ip,j,k))
+         dtti=dxxt1(i,j)
+         dttj=dyyt1(i,j)
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+        y3(i)=(y1(i)-x(i,j,k))/(dtti*(max(umod(i,j,k),0.)*x(im,j,k)
+     1                               -min(umod(ip,j,k),0.)*x(ip,j,k))
+     2                 +dttj*(max(vmod(i,j,k),0.)*x(i,jm,k)
+     3                       -min(vmod(i,jp,k),0.)*x(i,jp,k))
+     4                 +dttk*(max(wmod(i,j,k),0.)*x(i,j,km)
+     5                       -min(wmod(i,j,kp),0.)*x(i,j,kp))+eps)
+        y4(i)=(x(i,j,k)-y2(i))/(dtti*(max(umod(ip,j,k),0.)*x(i,j,k)
+     1                               -min(umod(i,j,k),0.)*x(i,j,k))
+     2                 +dttj*(max(vmod(i,jp,k),0.)*x(i,j,k)
+     3                       -min(vmod(i,j,k),0.)*x(i,j,k))
+     4                 +dttk*(max(wmod(i,j,kp),0.)*x(i,j,k)
+     5                       -min(wmod(i,j,k),0.)*x(i,j,k))+eps)
+        endif
+  400  continue
+       do 450 i=3,iles
+         im=i-1
+        if (y5(i) .ge. eps) then
+           u(i,j,k)=min(1.,y4(im),y3(i))*max(0.,umod(i,j,k))
+     1             +min(1.,y4(i),y3(im))*min(0.,umod(i,j,k))
+        endif
+  450  continue
+ 4000 continue
+      do 5000 k=2,kles
+         kp=k+1
+         km=k-1
+         dttk=dzzt1(k)
+c
+#ifdef VERSION2D
+       do 500 j=1,1
+         jm=j
+         jp=j
+#else
+       do 500 j=2,jles
+         jm=j-1
+         jp=j+1
+#endif
+       do i=3,iles
+         im=i-1
+         ip=i+1
+
+        xy1(i,j)=0.
+        xy2(i,j)=0.
+        xy3(i,j)=0.
+        xy4(i,j)=0.
+
+        xy5(i,j)=x(i,j,k)+x(i,jm,k)
+        if (xy5(i,j) .ge. eps) then
+         xy1(i,j)=max(x(i,jm,k),x(i,j,k),x(i,jp,k),x1(i,jm,k),
+     1                x1(i,j,k),x1(i,jp,k))
+         xy2(i,j)=min(x(i,jm,k),x(i,j,k),x(i,jp,k),x1(i,jm,k),
+     1                x1(i,j,k),x1(i,jp,k))
+         dtti=dxxt1(i,j)
+         dttj=dyyt1(i,j)
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+       xy3(i,j)=(xy1(i,j)-x(i,j,k))/(dttj*(max(vmod(i,j,k),0.)*x(i,jm,k)
+     1                                  -min(vmod(i,jp,k),0.)*x(i,jp,k))
+     2                 +dtti*(max(umod(i,j,k),0.)*x(im,j,k)
+     3                       -min(umod(ip,j,k),0.)*x(ip,j,k))
+     4                 +dttk*(max(wmod(i,j,k),0.)*x(i,j,km)
+     5                       -min(wmod(i,j,kp),0.)*x(i,j,kp))+eps)
+       xy4(i,j)=(x(i,j,k)-xy2(i,j))/(dttj*(max(vmod(i,jp,k),0.)*x(i,j,k)
+     1                                    -min(vmod(i,j,k),0.)*x(i,j,k))
+     2                 +dtti*(max(umod(ip,j,k),0.)*x(i,j,k)
+     3                       -min(umod(i,j,k),0.)*x(i,j,k))
+     4                 +dttk*(max(wmod(i,j,kp),0.)*x(i,j,k)
+     5                       -min(wmod(i,j,k),0.)*x(i,j,k))+eps)
+        endif
+       enddo
+500	continue
+
+#ifdef VERSION2D
+       do 550 j=1,1
+#else
+       do 550 j=3,jles
+#endif
+       do i=3,iles
+         if (xy5(i,j) .ge. eps) then
+
+#ifdef VERSION2D
+           v(i,j,k)=min(1.,xy4(i,j  ),xy3(i,j))*max(0.,vmod(i,j,k))
+     1             +min(1.,xy4(i,j),xy3(i,j  ))*min(0.,vmod(i,j,k))
+#else
+           v(i,j,k)=min(1.,xy4(i,j-1),xy3(i,j))*max(0.,vmod(i,j,k))
+     1             +min(1.,xy4(i,j),xy3(i,j-1))*min(0.,vmod(i,j,k))
+#endif
+         endif
+       enddo
+550	continue
+
+ 5000 continue
+
+#ifdef VERSION2D
+       do 6000 j=1,1
+         jp=j
+         jm=j
+#else
+       do 6000 j=2,jles
+         jp=j+1
+         jm=j-1
+#endif
+       do 6000 i=2,iles
+         im=i-1
+         ip=i+1
+         dtti=dxxt1(i,j)
+         dttj=dyyt1(i,j)
+        do 600 k=2,kles
+         kp=k+1
+         km=k-1
+          dttk=dzzt1(k)
+         y1(k)=0.
+         y2(k)=0.
+         y3(k)=0.
+         y4(k)=0.
+         y5(k)=x(i,j,k)+x(i,j,km)
+        if (y5(k) .ge. eps) then
+         y1(k)=max(x(i,j,km),x(i,j,k),x(i,j,kp),x1(i,j,km),
+     1               x1(i,j,k),x1(i,j,kp))
+         y2(k)=min(x(i,j,km),x(i,j,k),x(i,j,kp),x1(i,j,km),
+     1               x1(i,j,k),x1(i,j,kp))
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+        y3(k)=(y1(k)-x(i,j,k))/(dtti*(max(umod(i,j,k),0.)*x(im,j,k)
+     1                               -min(umod(ip,j,k),0.)*x(ip,j,k))
+     2                 +dttj*(max(vmod(i,j,k),0.)*x(i,jm,k)
+     3                       -min(vmod(i,jp,k),0.)*x(i,jp,k))
+     4                 +dttk*(max(wmod(i,j,k),0.)*x(i,j,km)
+     5                       -min(wmod(i,j,kp),0.)*x(i,j,kp))+eps)
+        y4(k)=(x(i,j,k)-y2(k))/(dtti*(max(umod(ip,j,k),0.)*x(i,j,k)
+     1                               -min(umod(i,j,k),0.)*x(i,j,k))
+     2                  +dttj*(max(vmod(i,jp,k),0.)*x(i,j,k)
+     1                        -min(vmod(i,j,k),0.)*x(i,j,k))
+     2                  +dttk*(max(wmod(i,j,kp),0.)*x(i,j,k)
+     3                        -min(wmod(i,j,k),0.)*x(i,j,k))+eps)
+        endif
+  600  continue
+       do 650 k=3,kles
+         km=k-1
+        if (y5(k) .ge. eps) then
+          w(i,j,k)=min(1.,y4(km),y3(k))*max(0.,wmod(i,j,k))
+     1            +min(1.,y4(k),y3(km))*min(0.,wmod(i,j,k))
+        endif
+  650  continue
+ 6000 continue
+
+c   *****************************************************************
+         call bndop (u)
+         call bndop (v)
+         call bndop (w)
+#ifdef LB_OPEN_BC
+         CALL BNDOP11 (U,1)
+         CALL BNDOP11 (V,1)
+         CALL BNDOP11 (W,2)
+#endif
+
+c$doacross local(j,i)
+#ifdef VERSION2D
+      do j=1,1
+#else
+      do j=1,jmax
+#endif
+	 do i=1,imax
+	    w(i,j,kmax)=0.
+	 enddo
+      enddo
+
+      return
+      end

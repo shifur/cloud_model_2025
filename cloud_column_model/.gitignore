@@ -1,0 +1,10 @@
+.DS_Store
+*.mod
+*.exe
+*.o
+*.x
+*.a
+*.nc
+*.png
+*.log
+
